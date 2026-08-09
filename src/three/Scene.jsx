@@ -106,12 +106,13 @@ export default function Scene({
 
       const cx = room ? room.x + room.width / 2 - width / 2 : 0;
       const cz = room ? room.y + room.length / 2 - length / 2 : 0;
-      const back = room ? Math.max(room.length / 2 - 0.6, 0.6) : length * 0.3;
+      const backZ = room ? Math.max(room.length / 2 - 0.8, 0.8) : length * 0.3;
+      const offX = room ? Math.max(room.width / 2 - 0.9, 0) * 0.6 : 0;
 
       return {
-        fov: 70,
-        position: [cx, base + 1.6, cz + back],
-        target: [cx, base + 1.4, cz - 0.5],
+        fov: 65,
+        position: [cx + offX, base + 1.65, cz + backZ],
+        target: [cx - offX * 0.4, base + 1.35, cz - backZ * 0.5],
       };
     }
 
