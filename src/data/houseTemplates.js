@@ -220,7 +220,7 @@ export const HOUSE_TEMPLATES = [
     width: 20,
     length: 28,
     style: "Classic",
-    wallMaterial: "brick",
+    wallMaterial: "red-brick",
     wallColor: "#914b3b",
     roofStyle: "hip",
     roofColor: "#30302e",
