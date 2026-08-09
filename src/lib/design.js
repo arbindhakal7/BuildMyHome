@@ -1,4 +1,5 @@
 import { HOUSE_TEMPLATES } from "../data/houseTemplates";
+import { BASE_INTERIOR, interiorCost, interiorStyleOf } from "./interior";
 import { MATERIALS, ROOF_STYLES, WINDOW_STYLES, DOOR_STYLES } from "../data/materials";
 import { ROOM_TYPES } from "../data/roomTypes";
 
@@ -99,6 +100,7 @@ export function createDesign(overrides = {}) {
     templateId: null,
     architecture: { ...clone(BASE_ARCHITECTURE), ...(overrides.architecture || {}) },
     features: { ...clone(BASE_FEATURES), ...(overrides.features || {}) },
+    interior: { ...clone(BASE_INTERIOR), ...(overrides.interior || {}) },
     rooms: overrides.rooms
       ? clone(overrides.rooms)
       : ["living", "kitchen", "master-bedroom", "bedroom", "bathroom"].map((type, index) =>
@@ -151,7 +153,27 @@ export function designFromTemplate(template) {
       pergola: template.features.terrace,
       chimney: ["Classic", "Coastal", "Natural Modern"].includes(template.style),
     },
+    interior: interiorForStyle(template.style),
   });
+}
+
+const TEMPLATE_INTERIORS = {
+  Modern: "modern",
+  Contemporary: "modern",
+  "Natural Modern": "japandi",
+  Minimalist: "japandi",
+  Classic: "classic",
+  Traditional: "classic",
+  Coastal: "coastal",
+  Industrial: "industrial",
+  Scandinavian: "scandi",
+};
+
+function interiorForStyle(style) {
+  const id = TEMPLATE_INTERIORS[style] || "modern";
+  const preset = interiorStyleOf(id);
+
+  return { style: id, wallColor: preset.wall, floorMaterial: preset.floor };
 }
 
 /** Ground floor keeps the living spaces, upper floors take the remainder. */
@@ -262,13 +284,27 @@ export function priceBreakdown(design) {
     design.rooms.reduce((total, room) => total + room.width * room.length * 950, 0)
   );
 
+  const interior = interiorCost(design);
+  const interiorStyle = interiorStyleOf((design.interior || {}).style);
+
   const items = [
     { id: "shell", label: `Structure & ${material.name.toLowerCase()} facade`, amount: shell },
     { id: "roof", label: `${roof.name} roofing`, amount: roofing },
     { id: "glazing", label: `${windowStyle.name} glazing`, amount: glazing },
     { id: "door", label: `${door.name} entry`, amount: door.price },
     { id: "fitout", label: `Interior fit-out (${design.rooms.length} rooms)`, amount: fitout },
+    { id: "flooring", label: "Floor finishes", amount: interior.flooring },
+    { id: "joinery", label: `${interiorStyle.name} joinery & millwork`, amount: interior.joinery },
+    { id: "lighting", label: "Lighting package", amount: interior.lighting },
   ];
+
+  if (interior.furniture > 0) {
+    items.push({ id: "furniture", label: "Furniture & styling", amount: interior.furniture });
+  }
+
+  if (interior.ceiling > 0) {
+    items.push({ id: "ceiling", label: "Feature ceilings", amount: interior.ceiling });
+  }
 
   if (design.features.garages > 0) {
     items.push({
@@ -312,6 +348,7 @@ export function migrateDesign(saved) {
     ...saved,
     architecture: { ...base.architecture, ...(saved.architecture || {}) },
     features: { ...base.features, ...(saved.features || {}) },
+    interior: { ...base.interior, ...(saved.interior || {}) },
     rooms: (saved.rooms || []).map((room) => ({
       ...makeRoom(room.type, room.floor || 0),
       ...room,

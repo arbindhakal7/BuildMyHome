@@ -1,13 +1,99 @@
 import { useMemo } from "react";
 
-import { layoutFloor, WALL_THICKNESS } from "../lib/layout";
+import { DOOR_WIDTH, INTERIOR_WALL, interiorPlan } from "../lib/interior";
+import { WALL_THICKNESS } from "../lib/layout";
 
 const PADDING = 2.4;
 
-export default function FloorPlan({ design, floor, selectedRoomId, onSelectRoom }) {
+const ROUND_PIECES = new Set(["office-chair", "plant", "floor-lamp", "sink"]);
+const SOFT_PIECES = new Set(["rug", "mirror-wall", "screen"]);
+
+/** Furniture footprint in plan coordinates, honouring the piece's rotation. */
+function footprintOf(piece, cx, cz) {
+  const turned = Math.abs(Math.sin(piece.rot || 0)) > 0.5;
+  const w = turned ? piece.d : piece.w;
+  const d = turned ? piece.w : piece.d;
+
+  return { x: cx + piece.x - w / 2, y: cz + piece.z - d / 2, w, d };
+}
+
+function FurnitureSymbol({ piece, cx, cz }) {
+  const box = footprintOf(piece, cx, cz);
+
+  if (ROUND_PIECES.has(piece.kind)) {
+    return (
+      <circle
+        cx={box.x + box.w / 2}
+        cy={box.y + box.d / 2}
+        r={Math.min(box.w, box.d) / 2}
+        fill="none"
+        stroke="#6d716e"
+        strokeWidth="0.05"
+      />
+    );
+  }
+
+  return (
+    <rect
+      x={box.x}
+      y={box.y}
+      width={box.w}
+      height={box.d}
+      rx={piece.kind === "bathtub" ? 0.25 : 0.05}
+      fill={SOFT_PIECES.has(piece.kind) ? "none" : "#ffffff"}
+      fillOpacity={SOFT_PIECES.has(piece.kind) ? 0 : 0.45}
+      stroke="#6d716e"
+      strokeWidth="0.05"
+      strokeDasharray={SOFT_PIECES.has(piece.kind) ? "0.28 0.2" : undefined}
+    />
+  );
+}
+
+function Partition({ wall }) {
+  const half = INTERIOR_WALL / 2;
+  const { center, horizontal, length, door } = wall;
+
+  const segments = door
+    ? [(length - door.width) / 2, (length - door.width) / 2].map((span, index) => ({
+        span,
+        offset: (index === 0 ? -1 : 1) * (door.width + span) / 2,
+      }))
+    : [{ span: length, offset: 0 }];
+
+  return (
+    <g>
+      {segments.map(({ span, offset }) => (
+        <rect
+          key={`${offset}-${span}`}
+          x={horizontal ? center.x + offset - span / 2 : center.x - half}
+          y={horizontal ? center.z - half : center.z + offset - span / 2}
+          width={horizontal ? span : INTERIOR_WALL}
+          height={horizontal ? INTERIOR_WALL : span}
+          fill="#2c302e"
+        />
+      ))}
+
+      {door && (
+        <path
+          d={
+            horizontal
+              ? `M ${center.x - door.width / 2} ${center.z} a ${door.width} ${door.width} 0 0 1 ${door.width} ${door.width}`
+              : `M ${center.x} ${center.z - door.width / 2} a ${door.width} ${door.width} 0 0 0 ${door.width} ${door.width}`
+          }
+          fill="none"
+          stroke="#9aa09c"
+          strokeWidth="0.05"
+          strokeDasharray="0.25 0.2"
+        />
+      )}
+    </g>
+  );
+}
+
+export default function FloorPlan({ design, floor, selectedRoomId, onSelectRoom, showFurniture = true }) {
   const { width, length } = design.architecture;
 
-  const layout = useMemo(() => layoutFloor(design, floor), [design, floor]);
+  const plan = useMemo(() => interiorPlan(design, floor), [design, floor]);
 
   const viewBox = `${-PADDING} ${-PADDING} ${width + PADDING * 2} ${length + PADDING * 2}`;
 
@@ -32,7 +118,7 @@ export default function FloorPlan({ design, floor, selectedRoomId, onSelectRoom 
           strokeWidth="0.08"
         />
 
-        {layout.rooms.map((room) => (
+        {plan.rooms.map((room) => (
           <g
             key={room.id}
             className={`plan-room${selectedRoomId === room.id ? " selected" : ""}`}
@@ -43,10 +129,21 @@ export default function FloorPlan({ design, floor, selectedRoomId, onSelectRoom 
               y={room.y}
               width={room.width}
               height={room.length}
-              fill={room.color}
+              fill={room.finish.floor.color}
+              fillOpacity="0.5"
               stroke="#2c302e"
-              strokeWidth="0.12"
+              strokeWidth="0.08"
             />
+
+            {showFurniture &&
+              room.furniture.map((piece, index) => (
+                <FurnitureSymbol
+                  key={`${piece.kind}-${index}`}
+                  piece={piece}
+                  cx={room.x + room.width / 2}
+                  cz={room.y + room.length / 2}
+                />
+              ))}
 
             <text x={room.x + room.width / 2} y={room.y + room.length / 2 - 0.25} textAnchor="middle" fontSize="0.85">
               {room.name}
@@ -64,9 +161,19 @@ export default function FloorPlan({ design, floor, selectedRoomId, onSelectRoom 
           </g>
         ))}
 
+        {plan.partitions.map((wall, index) => (
+          <Partition key={`${wall.center.x}-${wall.center.z}-${index}`} wall={wall} />
+        ))}
+
         {floor === 0 && (
           <g>
-            <rect x={width / 2 - 0.9} y={length - WALL_THICKNESS} width="1.8" height={WALL_THICKNESS} fill="#f7f5ef" />
+            <rect
+              x={width / 2 - DOOR_WIDTH}
+              y={length - WALL_THICKNESS}
+              width={DOOR_WIDTH * 2}
+              height={WALL_THICKNESS}
+              fill="#f7f5ef"
+            />
             <path
               d={`M ${width / 2 - 0.9} ${length} a 1.8 1.8 0 0 0 1.8 -1.8`}
               fill="none"
@@ -95,7 +202,7 @@ export default function FloorPlan({ design, floor, selectedRoomId, onSelectRoom 
         </g>
       </svg>
 
-      {layout.rooms.length === 0 && (
+      {plan.rooms.length === 0 && (
         <p className="floorplan-empty">No rooms on this level yet — add some from the Rooms panel.</p>
       )}
     </div>

@@ -1,13 +1,19 @@
 import {
+  Armchair,
   Building,
   Building2,
   CarFront,
   DoorOpen,
   Flame,
   Fence,
+  Frame,
+  Grid2x2,
+  Lamp,
   Layers3,
   LayoutDashboard,
+  Leaf,
   Palette,
+  PaintBucket,
   Plus,
   Ruler,
   Square,
@@ -35,7 +41,15 @@ import {
   WINDOW_FRAMES,
   WINDOW_STYLES,
 } from "../data/materials";
+import {
+  CEILING_STYLES,
+  FURNITURE_LEVELS,
+  INTERIOR_FLOORS,
+  INTERIOR_STYLES,
+  WALL_COLORS,
+} from "../data/interior";
 import { ROOM_CATEGORIES, ROOM_TYPES } from "../data/roomTypes";
+import { BASE_INTERIOR, finishOf, interiorStyleOf } from "../lib/interior";
 import { layoutFloor } from "../lib/layout";
 
 import {
@@ -315,6 +329,87 @@ export function FeaturesPanel({ design, change }) {
   );
 }
 
+export function InteriorPanel({ design, changeInterior }) {
+  const interior = design.interior || BASE_INTERIOR;
+
+  return (
+    <Panel title="Interior" description="Finishes, joinery and furnishing for every room.">
+      <SectionTitle icon={Armchair} title="Design style" />
+
+      <OptionGrid
+        options={INTERIOR_STYLES}
+        value={interior.style}
+        onChange={(id) => {
+          const preset = interiorStyleOf(id);
+
+          changeInterior({ style: id, wallColor: preset.wall, floorMaterial: preset.floor });
+        }}
+      />
+
+      <SectionTitle icon={PaintBucket} title="Wall colour" />
+
+      <SwatchGrid
+        options={WALL_COLORS}
+        value={WALL_COLORS.find((swatch) => swatch.color === interior.wallColor)?.id}
+        onChange={(swatch) => changeInterior({ wallColor: swatch.color })}
+      />
+
+      <ColorField
+        label="Custom wall colour"
+        value={interior.wallColor}
+        onChange={(value) => changeInterior({ wallColor: value })}
+      />
+
+      <SectionTitle icon={Grid2x2} title="Flooring" hint="Wet areas switch to tile automatically" />
+
+      <SwatchGrid
+        options={INTERIOR_FLOORS}
+        value={interior.floorMaterial}
+        onChange={(option) => changeInterior({ floorMaterial: option.id })}
+      />
+
+      <SectionTitle icon={Layers3} title="Ceiling" />
+
+      <OptionGrid
+        options={CEILING_STYLES}
+        value={interior.ceiling}
+        onChange={(value) => changeInterior({ ceiling: value })}
+      />
+
+      <SectionTitle icon={Armchair} title="Furnishing" />
+
+      <OptionGrid
+        options={FURNITURE_LEVELS}
+        value={interior.furniture}
+        onChange={(value) => changeInterior({ furniture: value })}
+        columns={3}
+      />
+
+      <Toggle
+        icon={Frame}
+        label="Artwork"
+        active={interior.artwork}
+        onClick={() => changeInterior({ artwork: !interior.artwork })}
+      />
+
+      <Toggle
+        icon={Leaf}
+        label="Indoor planting"
+        active={interior.plants}
+        onClick={() => changeInterior({ plants: !interior.plants })}
+      />
+
+      <Toggle
+        icon={Lamp}
+        label="Pendant lighting"
+        hint="Lights up in night mode"
+        active={interior.pendants}
+        onClick={() => changeInterior({ pendants: !interior.pendants })}
+      />
+    </Panel>
+  );
+}
+
 export function RoomsPanel({
   design,
   addRoom,
@@ -436,6 +531,29 @@ export function RoomsPanel({
                 {Array.from({ length: design.architecture.floors }, (_, index) => (
                   <option key={index} value={index}>
                     {floorLabel(index)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="room-floor">
+              Floor finish
+              <select
+                value={room.finish?.floor || ""}
+                onChange={(event) =>
+                  changeRoom(room.id, "finish", {
+                    ...(room.finish || {}),
+                    floor: event.target.value || undefined,
+                  })
+                }
+              >
+                <option value="">
+                  Follow interior ({finishOf(design, room).floor.name})
+                </option>
+
+                {INTERIOR_FLOORS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.name}
                   </option>
                 ))}
               </select>

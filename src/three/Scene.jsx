@@ -4,6 +4,7 @@ import { ContactShadows, Grid, OrbitControls, Sky, Stars } from "@react-three/dr
 import * as THREE from "three";
 
 import House from "./House";
+import { interiorPlan } from "../lib/interior";
 
 export const CAMERA_VIEWS = {
   perspective: { label: "3/4", offset: [1, 0.62, 1.15] },
@@ -13,12 +14,28 @@ export const CAMERA_VIEWS = {
   eye: { label: "Street", offset: [0.55, 0.1, 1.5] },
 };
 
-function CameraRig({ view, radius, controls }) {
+function CameraRig({ view, radius, controls, focus }) {
   const { camera } = useThree();
 
   useEffect(() => {
+    if (focus) {
+      camera.position.set(...focus.position);
+      camera.lookAt(...focus.target);
+      camera.fov = focus.fov;
+      camera.updateProjectionMatrix();
+
+      if (controls.current) {
+        controls.current.target.set(...focus.target);
+        controls.current.update();
+      }
+
+      return;
+    }
+
     const preset = CAMERA_VIEWS[view] || CAMERA_VIEWS.perspective;
     const [x, y, z] = preset.offset;
+
+    camera.fov = 38;
 
     camera.position.set(x * radius, Math.max(2.4, y * radius), z * radius);
     camera.lookAt(0, radius * 0.16, 0);
@@ -28,7 +45,7 @@ function CameraRig({ view, radius, controls }) {
       controls.current.target.set(0, radius * 0.16, 0);
       controls.current.update();
     }
-  }, [view, radius, camera, controls]);
+  }, [view, radius, camera, controls, focus]);
 
   return null;
 }
@@ -62,6 +79,7 @@ export default function Scene({
   interactive = true,
   showGround = true,
   showGrid = false,
+  interior = null,
   className,
 }) {
   const controls = useRef();
@@ -71,13 +89,46 @@ export default function Scene({
     return Math.max(width, length, floors * floorHeight) * 1.25;
   }, [design.architecture]);
 
+  const focus = useMemo(() => {
+    if (!interior) return null;
+
+    const { width, length, floorHeight, plinth, floors } = design.architecture;
+    const level = Math.min(interior.floor, floors - 1);
+    const base = level * floorHeight + (plinth ? 0.35 : 0);
+
+    if (interior.mode === "walk") {
+      const rooms = interiorPlan(design, level).rooms;
+
+      const room = rooms.reduce(
+        (largest, candidate) => (candidate.area > (largest?.area ?? 0) ? candidate : largest),
+        null
+      );
+
+      const cx = room ? room.x + room.width / 2 - width / 2 : 0;
+      const cz = room ? room.y + room.length / 2 - length / 2 : 0;
+      const back = room ? Math.max(room.length / 2 - 0.6, 0.6) : length * 0.3;
+
+      return {
+        fov: 70,
+        position: [cx, base + 1.6, cz + back],
+        target: [cx, base + 1.4, cz - 0.5],
+      };
+    }
+
+    return {
+      fov: 38,
+      position: [width * 0.95, base + Math.max(width, length) * 0.75, length * 0.95],
+      target: [0, base, 0],
+    };
+  }, [interior, design]);
+
   return (
     <Canvas
       className={className}
       shadows
       dpr={[1, 1.8]}
       gl={{ antialias: true, preserveDrawingBuffer: true, toneMapping: THREE.ACESFilmicToneMapping }}
-      camera={{ fov: 38, near: 0.5, far: radius * 12, position: [radius, radius * 0.7, radius] }}
+      camera={{ fov: 38, near: 0.1, far: radius * 12, position: [radius, radius * 0.7, radius] }}
     >
       <color attach="background" args={[night ? "#0a1018" : "#dfe7ea"]} />
       <fog attach="fog" args={[night ? "#0a1018" : "#dfe7ea", radius * 3, radius * 8]} />
@@ -109,7 +160,9 @@ export default function Scene({
           </>
         )}
 
-        <House design={design} night={night} showGround={showGround} />
+        <House design={design} night={night} showGround={showGround} interior={interior} />
+
+        {interior && <ambientLight intensity={night ? 0.5 : 1.1} color={night ? "#ffdcae" : "#fff6e9"} />}
 
         <ContactShadows
           position={[0, 0.02, 0]}
@@ -136,7 +189,7 @@ export default function Scene({
         )}
       </Suspense>
 
-      <CameraRig view={view} radius={radius} controls={controls} />
+      <CameraRig view={view} radius={radius} controls={controls} focus={focus} />
 
       <OrbitControls
         ref={controls}
@@ -146,9 +199,9 @@ export default function Scene({
         enablePan={interactive}
         autoRotate={autoRotate}
         autoRotateSpeed={0.5}
-        minDistance={6}
+        minDistance={interior?.mode === "walk" ? 0.4 : 6}
         maxDistance={radius * 5}
-        maxPolarAngle={Math.PI / 2.05}
+        maxPolarAngle={interior ? Math.PI / 1.9 : Math.PI / 2.05}
       />
     </Canvas>
   );

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Armchair,
   Building2,
   Camera,
   ChevronRight,
@@ -12,6 +13,7 @@ import {
   Maximize,
   Moon,
   Palette,
+  PersonStanding,
   Plus,
   Receipt,
   Redo2,
@@ -43,6 +45,7 @@ import {
   ArchitecturePanel,
   CostPanel,
   FeaturesPanel,
+  InteriorPanel,
   MaterialsPanel,
   OpeningsPanel,
   RoomsPanel,
@@ -57,6 +60,7 @@ const DRAFT_KEY = "buildmyhome.draft.v2";
 const TOOLS = [
   { id: "architecture", label: "Architecture", icon: Building2 },
   { id: "rooms", label: "Rooms", icon: LayoutDashboard },
+  { id: "interior", label: "Interior", icon: Armchair },
   { id: "materials", label: "Materials", icon: Palette },
   { id: "openings", label: "Openings", icon: DoorOpen },
   { id: "features", label: "Features", icon: Settings2 },
@@ -95,6 +99,7 @@ export default function App() {
   const [camera, setCamera] = useState("perspective");
   const [night, setNight] = useState(false);
   const [grid, setGrid] = useState(false);
+  const [walkthrough, setWalkthrough] = useState(false);
 
   const [selectedFloor, setSelectedFloor] = useState(0);
   const [selectedRoomId, setSelectedRoomId] = useState(null);
@@ -142,6 +147,13 @@ export default function App() {
   const changeFeature = useCallback(
     (key, value) => {
       commit({ ...design, features: { ...design.features, [key]: value } });
+    },
+    [commit, design]
+  );
+
+  const changeInterior = useCallback(
+    (patch) => {
+      commit({ ...design, interior: { ...design.interior, ...patch } });
     },
     [commit, design]
   );
@@ -305,7 +317,8 @@ export default function App() {
 
       if (event.key.toLowerCase() === "n") setNight((value) => !value);
       if (event.key.toLowerCase() === "g") setGrid((value) => !value);
-      if (event.key.toLowerCase() === "p") setView((value) => (value === "3d" ? "plan" : "3d"));
+      if (event.key.toLowerCase() === "p") setView((value) => (value === "plan" ? "3d" : "plan"));
+      if (event.key.toLowerCase() === "i") setView((value) => (value === "interior" ? "3d" : "interior"));
     }
 
     window.addEventListener("keydown", onKeyDown);
@@ -382,6 +395,8 @@ export default function App() {
           night={night}
           grid={grid}
           setGrid={setGrid}
+          walkthrough={walkthrough}
+          setWalkthrough={setWalkthrough}
           viewerRef={viewerRef}
           selectedFloor={selectedFloor}
           setSelectedFloor={setSelectedFloor}
@@ -398,6 +413,7 @@ export default function App() {
           snapshot={snapshot}
           changeArchitecture={changeArchitecture}
           changeFeature={changeFeature}
+          changeInterior={changeInterior}
           setFloors={setFloors}
           addRoom={addRoom}
           removeRoom={removeRoom}
@@ -580,6 +596,8 @@ function DesignerPage(props) {
     night,
     grid,
     setGrid,
+    walkthrough,
+    setWalkthrough,
     viewerRef,
     selectedFloor,
     setSelectedFloor,
@@ -596,11 +614,27 @@ function DesignerPage(props) {
     snapshot,
     changeArchitecture,
     changeFeature,
+    changeInterior,
     setFloors,
     addRoom,
     removeRoom,
     changeRoom,
   } = props;
+
+  const levelTabs = (
+    <div className="camera-tabs">
+      {Array.from({ length: design.architecture.floors }, (_, index) => (
+        <button
+          key={index}
+          type="button"
+          className={selectedFloor === index ? "active" : ""}
+          onClick={() => setSelectedFloor(index)}
+        >
+          {floorLabel(index)}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <main className="designer">
@@ -664,10 +698,43 @@ function DesignerPage(props) {
                 3D model
               </button>
 
+              <button
+                type="button"
+                className={view === "interior" ? "active" : ""}
+                onClick={() => setView("interior")}
+              >
+                Interior
+              </button>
+
               <button type="button" className={view === "plan" ? "active" : ""} onClick={() => setView("plan")}>
                 Floor plan
               </button>
             </div>
+
+            {view === "interior" && (
+              <div className="camera-tabs">
+                {Array.from({ length: design.architecture.floors }, (_, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={selectedFloor === index ? "active" : ""}
+                    onClick={() => setSelectedFloor(index)}
+                  >
+                    {floorLabel(index)}
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  className={walkthrough ? "active" : ""}
+                  aria-pressed={walkthrough}
+                  onClick={() => setWalkthrough(!walkthrough)}
+                >
+                  <PersonStanding size={16} aria-hidden />
+                  {walkthrough ? "Walking" : "Walk inside"}
+                </button>
+              </div>
+            )}
 
             {view === "3d" ? (
               <div className="camera-tabs">
@@ -691,20 +758,9 @@ function DesignerPage(props) {
                   <Grid3x3 size={16} />
                 </button>
               </div>
-            ) : (
-              <div className="camera-tabs">
-                {Array.from({ length: design.architecture.floors }, (_, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    className={selectedFloor === index ? "active" : ""}
-                    onClick={() => setSelectedFloor(index)}
-                  >
-                    {floorLabel(index)}
-                  </button>
-                ))}
-              </div>
-            )}
+            ) : view === "plan" ? (
+              levelTabs
+            ) : null}
 
             <button
               type="button"
@@ -717,9 +773,18 @@ function DesignerPage(props) {
           </div>
 
           <div className="viewer" ref={viewerRef}>
-            {view === "3d" ? (
-              <Scene design={design} night={night} view={camera} showGrid={grid} />
-            ) : (
+            {view === "3d" && <Scene design={design} night={night} view={camera} showGrid={grid} />}
+
+            {view === "interior" && (
+              <Scene
+                design={design}
+                night={night}
+                showGrid={false}
+                interior={{ floor: selectedFloor, mode: walkthrough ? "walk" : "cutaway" }}
+              />
+            )}
+
+            {view === "plan" && (
               <FloorPlan
                 design={design}
                 floor={selectedFloor}
@@ -779,6 +844,7 @@ function DesignerPage(props) {
             />
           )}
 
+          {tool === "interior" && <InteriorPanel design={design} changeInterior={changeInterior} />}
           {tool === "materials" && <MaterialsPanel design={design} change={changeArchitecture} />}
           {tool === "openings" && <OpeningsPanel design={design} change={changeArchitecture} />}
           {tool === "features" && <FeaturesPanel design={design} change={changeFeature} />}
@@ -787,7 +853,8 @@ function DesignerPage(props) {
       </div>
 
       <p className="shortcuts">
-        Shortcuts: <kbd>N</kbd> night · <kbd>G</kbd> grid · <kbd>P</kbd> plan · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo ·{" "}
+        Shortcuts: <kbd>N</kbd> night · <kbd>G</kbd> grid · <kbd>I</kbd> interior · <kbd>P</kbd> plan ·{" "}
+        <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo ·{" "}
         <kbd>Ctrl</kbd>+<kbd>S</kbd> save
       </p>
     </main>

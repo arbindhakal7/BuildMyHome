@@ -2,7 +2,9 @@ import { useMemo } from "react";
 import * as THREE from "three";
 
 import { materialOf, roofHeightOf, windowStyleOf, doorStyleOf } from "../lib/design";
+import { paletteOf } from "../lib/interior";
 import { facadePattern, surfaceTexture } from "../lib/textures";
+import Interior from "./Interior";
 import {
   butterflyGeometry,
   facadeOpenings,
@@ -25,6 +27,10 @@ const FRAME_COLORS = {
   bronze: "#6d5138",
   natural: "#8a6547",
 };
+
+function clampFloor(floor, floors) {
+  return Math.min(Math.max(Math.round(floor) || 0, 0), floors - 1);
+}
 
 function Solid({ position, size, color, map, roughness = 0.85, metalness = 0, rotation }) {
   return (
@@ -207,7 +213,32 @@ function Wall({ span, height, openings, facade, glass, night, door }) {
   );
 }
 
-function Storey({ width, length, height, base, openings, facade, glass, night, door, interiorColor }) {
+/** Low perimeter wall used for the doll-house cutaway of the inspected level. */
+function CutShell({ width, length, base, facade }) {
+  const height = 1.05;
+
+  return (
+    <group position={[0, base, 0]}>
+      {[
+        [[width, height, WALL_THICKNESS], [0, height / 2, length / 2 - WALL_THICKNESS / 2]],
+        [[width, height, WALL_THICKNESS], [0, height / 2, -length / 2 + WALL_THICKNESS / 2]],
+        [[WALL_THICKNESS, height, length], [width / 2 - WALL_THICKNESS / 2, height / 2, 0]],
+        [[WALL_THICKNESS, height, length], [-width / 2 + WALL_THICKNESS / 2, height / 2, 0]],
+      ].map(([size, position]) => (
+        <Solid
+          key={position.join(",")}
+          position={position}
+          size={size}
+          color={facade.color}
+          map={facade.map}
+          roughness={facade.roughness}
+        />
+      ))}
+    </group>
+  );
+}
+
+function Storey({ width, length, height, base, openings, facade, glass, night, door, interiorColor, hollow }) {
   const sides = [
     { key: "front", span: width, position: [0, base, length / 2 - WALL_THICKNESS / 2], rotation: [0, 0, 0], openings: openings.front },
     { key: "back", span: width, position: [0, base, -length / 2 + WALL_THICKNESS / 2], rotation: [0, Math.PI, 0], openings: openings.back },
@@ -232,6 +263,7 @@ function Storey({ width, length, height, base, openings, facade, glass, night, d
       ))}
 
       {/* Interior shell, visible through the openings. */}
+      {!hollow && (
       <mesh position={[0, base + height / 2, 0]}>
         <boxGeometry args={[width - WALL_THICKNESS * 2, height - 0.02, length - WALL_THICKNESS * 2]} />
         <meshStandardMaterial
@@ -242,6 +274,7 @@ function Storey({ width, length, height, base, openings, facade, glass, night, d
           emissiveIntensity={night ? 0.9 : 0}
         />
       </mesh>
+      )}
 
       <Solid
         position={[0, base + SLAB_THICKNESS / 2, 0]}
@@ -536,9 +569,13 @@ function Hedge({ position, size }) {
    HOUSE
 ========================================================= */
 
-export default function House({ design, night = false, showGround = true }) {
+export default function House({ design, night = false, showGround = true, interior = null }) {
   const a = design.architecture;
   const features = design.features;
+
+  const inspected = interior ? clampFloor(interior.floor, a.floors) : null;
+  const cutaway = interior?.mode === "cutaway";
+  const palette = paletteOf(design);
 
   const material = materialOf(a.facadeMaterial);
   const windowStyle = windowStyleOf(a.windowStyle);
@@ -568,7 +605,9 @@ export default function House({ design, night = false, showGround = true }) {
   const paving = useMemo(() => surfaceTexture("paving", "#9c968c", 6), []);
   const deck = useMemo(() => surfaceTexture("siding", "#a5825c", 8), []);
 
-  const storeys = Array.from({ length: a.floors }, (_, floor) => {
+  const visibleFloors = interior ? inspected + 1 : a.floors;
+
+  const storeys = Array.from({ length: visibleFloors }, (_, floor) => {
     const setback = floor === 0 ? 0 : a.upperSetback;
     const width = a.width - setback * 2;
     const length = a.length - setback * 2;
@@ -634,23 +673,52 @@ export default function House({ design, night = false, showGround = true }) {
         />
       )}
 
-      {storeys.map((storey) => (
-        <Storey
-          key={storey.floor}
-          width={storey.width}
-          length={storey.length}
-          height={a.floorHeight}
-          base={storey.base}
-          openings={storey.openings}
-          facade={facade}
-          glass={glass}
-          night={night}
-          door={door}
-          interiorColor={night ? "#4a3322" : "#8c8880"}
-        />
-      ))}
+      {storeys.map((storey) =>
+        cutaway && storey.floor === inspected ? (
+          <group key={storey.floor}>
+            <Solid
+              position={[0, storey.base + SLAB_THICKNESS / 2, 0]}
+              size={[storey.width + 0.16, SLAB_THICKNESS, storey.length + 0.16]}
+              color="#d6d2c8"
+              roughness={0.9}
+            />
 
-      <Roof architecture={a} base={roofBase} night={night} />
+            <CutShell
+              width={storey.width}
+              length={storey.length}
+              base={storey.base + SLAB_THICKNESS}
+              facade={facade}
+            />
+          </group>
+        ) : (
+          <Storey
+            key={storey.floor}
+            width={storey.width}
+            length={storey.length}
+            height={a.floorHeight}
+            base={storey.base}
+            openings={storey.openings}
+            facade={facade}
+            glass={glass}
+            night={night}
+            door={door}
+            interiorColor={night ? "#4a3322" : palette.wall}
+            hollow={storey.floor === inspected}
+          />
+        )
+      )}
+
+      {interior && (
+        <Interior
+          design={design}
+          floor={inspected}
+          base={storeys[inspected].base + SLAB_THICKNESS}
+          night={night}
+          scale={storeys[inspected].width / a.width}
+        />
+      )}
+
+      {!interior && <Roof architecture={a} base={roofBase} night={night} />}
 
       <Steps position={[0, 0, a.length / 2 + 0.2]} width={doorSpec.width + 1.2} />
 
